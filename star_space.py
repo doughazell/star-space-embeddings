@@ -1,25 +1,31 @@
-import tensorflow as tf
-import numpy as np
 import random
+
+import numpy as np
+import tensorflow as tf
+from matplotlib import pyplot as plt
 from scipy.spatial.distance import cosine as dist
 from sklearn.metrics import confusion_matrix
-from matplotlib import pyplot as plt
 
+# Added to filter out 'stderr' print statements from 'confusion_matrix(y_true, y_pred)'
+#   using: '2> /dev/null'
+import sys
 
 class StarSpaceShip:
 
     def __init__(self):
-        self.input_encoder_model = None
-        self.target_encoder_model = None
-        self.model = None
+      ''' '''
+      self.input_encoder_model = None
+      self.target_encoder_model = None
+      self.model = None
 
-        self.target_encodings = None
-        self.distance_dict = None
+      self.target_encodings = None
+      self.distance_dict = None
 
-        self.test_positive_input_batches = None
-        self.test_positive_batch_targets = None
-        self.test_negative_batch_targets = None
-
+      self.test_positive_input_batches = None
+      self.test_positive_batch_targets = None
+      self.test_negative_batch_targets = None
+      
+    # Called from 'prepare_features_targets()'
     @staticmethod
     def _fetch_prepare_rawdata():
 
@@ -33,6 +39,7 @@ class StarSpaceShip:
 
         return x_train, y_train, x_test, y_test
 
+    # Called from 'build_model_architecture()'
     @staticmethod
     def custom_loss(y_true, y_pred):
 
@@ -48,6 +55,7 @@ class StarSpaceShip:
 
         return loss
 
+    # Called from 'train_star_space()'
     def prepare_features_targets(self):
         x_train, y_train, x_test, y_test = self._fetch_prepare_rawdata()
 
@@ -68,6 +76,7 @@ class StarSpaceShip:
         return train_positive_input_batches, train_positive_batch_targets, train_negative_batch_targets, train_dummy_outputs,\
              test_positive_input_batches, test_positive_batch_targets, test_negative_batch_targets, test_dummy_outputs
 
+    # Called from 'prepare_features_targets()'
     def generate_batches(self, x, y):
         positive_input_batches = []
         negative_input_batches = []
@@ -89,6 +98,7 @@ class StarSpaceShip:
 
         return np.array(positive_input_batches), np.array(positive_batch_targets), np.array(negative_batch_targets)
 
+    # Called from 'train_star_space()'
     def build_model_architecture(self):
         positive_input = tf.keras.layers.Input(shape = (1, 784))
         positive_target_input = tf.keras.layers.Input(shape = (1, ))
@@ -112,6 +122,16 @@ class StarSpaceShip:
         self.input_encoder_model = tf.keras.models.Model(inputs = positive_input, outputs = pos_input_embedding)
         self.target_encoder_model = tf.keras.models.Model(inputs = positive_target_input, outputs = pos_target_embedding)
 
+    # ================================= PUBLIC METHODS =============================================
+    
+    # Added to direct print statements to 'stderr' to filter out TensorFlow 'stdout' msgs 
+    #   using: '2>&1 > /dev/null'
+
+    # 'model.summary(print_fn=XXX)' can handle either 'staticmethod' or object call with 'self'
+    #@staticmethod
+    def print2StdErr(self, str):
+      print(str, file=sys.stderr)
+
     def train_star_space(self):
         train_positive_input_batches, train_positive_batch_targets, train_negative_batch_targets, train_dummy_outputs,\
              test_positive_input_batches, test_positive_batch_targets, test_negative_batch_targets, test_dummy_outputs = self.prepare_features_targets()
@@ -121,11 +141,22 @@ class StarSpaceShip:
         self.test_negative_batch_targets = test_negative_batch_targets
 
         self.build_model_architecture()
-        print (self.model.summary())
+        
+        
+        print("\nModel summary")
+        print("-------------")
+        # If 'self.model.summary()' is printed then the return value is printed ie "None"
+        #   https://keras.io/api/models/model/#summary-method - "Defaults to print"
+        self.model.summary()
+        #self.model.summary(print_fn=self.print2StdErr)
+        #print (self.model.summary())
+        print("=============")
 
+        print("\nTraining model...")
         self.model.fit([train_positive_input_batches, train_positive_batch_targets, train_negative_batch_targets], train_dummy_outputs, epochs = 10,\
          validation_data = ([test_positive_input_batches, test_positive_batch_targets, test_negative_batch_targets], test_dummy_outputs))
 
+        print("\nPredicting target encodings...")
         self.target_encodings = {target_id: self.target_encoder_model.predict(np.array([target_id]))[0, 0, :] for target_id in range(10)}
 
         d = {}
@@ -134,8 +165,11 @@ class StarSpaceShip:
                 if i != j and f'{j}_{i}' not in d:
                     d[f'{i}_{j}'] = 1 - dist(self.target_encodings[i], self.target_encodings[j])
 
+        print("\nTarget encodings")
+        print("----------------")
         print ({k: v for k, v in sorted(d.items(), key=lambda item: item[1])})
 
+    # Called from 'plot_confusion_matrix()'
     def predict_class(self, input_image = None):
 
         actual_target = None
@@ -160,12 +194,14 @@ class StarSpaceShip:
         testset_embeddings = self.input_encoder_model.predict(self.test_positive_input_batches)
         testset_embeddings = testset_embeddings[:, 0, :].astype('U25')
         
-        with open("visualization/projector_tensorflow_data/test_embedding_vectors.tsv", "w") as f:
+        #with open("visualization/projector_tensorflow_data/test_embedding_vectors.tsv", "w") as f:
+        with open("visualization/test_embedding_vectors.tsv", "w") as f:
             f.write("\n".join(["\t".join(testset_embedding) for testset_embedding in testset_embeddings]))
 
         f.close()
 
-        with open("visualization/projector_tensorflow_data/test_embedding_labels.tsv", "w") as f:
+        #with open("visualization/projector_tensorflow_data/test_embedding_labels.tsv", "w") as f:
+        with open("visualization/test_embedding_labels.tsv", "w") as f:
             f.write("\n".join([str(label[0]) for label in self.test_positive_batch_targets]))
 
         f.close()
@@ -179,7 +215,11 @@ class StarSpaceShip:
             y_pred.append(np.argmax(scores))
             y_true.append(self.test_positive_batch_targets[idx][0])
 
-        cm = confusion_matrix(y_true, y_pred, labels)
+        # "TypeError: confusion_matrix() takes 2 positional arguments but 3 were given"
+        #cm = confusion_matrix(y_true, y_pred, labels)
+        # 'scikit-learn' v0.n and v1.1 had diff positional vs keyword arg set
+
+        cm = confusion_matrix(y_true, y_pred)
         
         labels = [str(label) for label in labels]
 
@@ -188,3 +228,45 @@ class StarSpaceShip:
         plt.yticks(np.arange(0, 10), labels)
 
         plt.savefig("visualization/confusion_matrix.png")
+
+if __name__ == "__main__":
+  print("\nHello world")
+
+  nn = StarSpaceShip()
+  
+  print("\nCalling 'StarSpaceShip::train_star_space()'")
+  nn.train_star_space()
+
+  # https://discuss.python.org/t/builtin-function-input-writes-its-prompt-to-sys-stderr-and-not-to-sys-stdout/12955/4
+  question = "\nDo you want to run 'plot_confusion_matrix()', which takes about 10mins (Y/n)?"
+  print (question,end='') # ie no newline since 'input()' prints to 'stderr' which is getting filtered out
+  
+  # Not cause 'input()' to print to 'stdout' (so must be getting redirected in input() stack)
+  #   (like can be done the other way for 'plot_confusion_matrix()')
+  #sys.stderr = sys.stdout
+  #response = input(question)
+
+  response = input()
+  response = response.lower()
+  if (response and response[0] == 'y') or response == '':
+    print("\nCalling 'StarSpaceShip::plot_confusion_matrix()'")
+
+    # 'confusion_matrix(y_true, y_pred)' prints a lot of progress lines to 'stdout' so removed 
+    #   with '2> /dev/null' on cmd line to filter out 'stdout' (with NO SPACE between '2' and '>')
+    sys.stdout = sys.stderr
+    nn.plot_confusion_matrix()
+    sys.stdout = sys.__stdout__
+  elif (response and response[0] == 'n'):
+    print('no problem then')
+  else:
+    print('default is Yes but should be caught earlier')
+  
+  question = "\nDo you want to run 'save_projector_tensorflow_files()'(Y/n)?"
+  print (question,end='')
+
+  response = input()
+  response = response.lower()
+  if (response and response[0] == 'y') or response == '':
+    print("\nCalling 'StarSpaceShip::save_projector_tensorflow_files()'")
+    nn.save_projector_tensorflow_files()
+
